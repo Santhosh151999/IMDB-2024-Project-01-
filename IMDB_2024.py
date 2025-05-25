@@ -1,133 +1,289 @@
-import streamlit as st
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-import plotly.express as px
-from sqlalchemy import create_engine
-
-# MySQL Connection
-engine = create_engine("mysql+mysqlconnector://root:Dark2020%40@localhost/IMDB_2024")
-
-# Load data from MySQL
-query = "SELECT * FROM movies2024"
-df = pd.read_sql(query, engine)
-
-# Fill missing genres
-df['Genre'] = df['Genre'].fillna('Unknown')
-
-# Explode genres for individual analysis
-def split_genres(df):
-    rows = []
-    for _, row in df.iterrows():
-        for genre in row['Genre'].split(','):
-            new_row = row.copy()
-            new_row['Genre'] = genre.strip()
-            rows.append(new_row)
-    return pd.DataFrame(rows)
-
-df_exploded = split_genres(df)
-
-# Navigation
-page = st.sidebar.radio("Choose View:", ["Visualizations", "Interactive Filter"])
-
-if page == "Visualizations":
-    st.title("IMDb 2024 Movie Analysis")
-    st.header("Data Visualizations")
-
-    top_movies = df[df['Votes'] > 1000].sort_values(by=['Ratings', 'Votes'], ascending=False).head(10)
-    st.subheader("Top 10 Movies by Rating and Voting")
-    st.dataframe(top_movies[['Title', 'Genre', 'Ratings', 'Votes']])
-
-    genre_count = df_exploded['Genre'].value_counts().reset_index()
-    genre_count.columns = ['Genre', 'Count']
-    st.subheader("Genre Distribution")
-    st.bar_chart(data=genre_count.set_index('Genre'))
-
-    avg_duration = df_exploded.groupby('Genre')['Duration'].mean().sort_values()
-    st.subheader("Average Duration by Genre")
-    fig, ax = plt.subplots()
-    avg_duration.plot(kind='barh', ax=ax)
-    st.pyplot(fig)
-
-    avg_votes = df_exploded.groupby('Genre')['Votes'].mean().sort_values(ascending=False)
-    st.subheader("Average Voting Counts by Genre")
-    st.bar_chart(avg_votes)
-
-    st.subheader("Rating Distribution")
-    fig, ax = plt.subplots()
-    sns.histplot(df['Ratings'].dropna(), bins=20, kde=True, ax=ax)
-    st.pyplot(fig)
-
-    top_per_genre = df_exploded.sort_values('Ratings', ascending=False).groupby('Genre').first().reset_index()
-    st.subheader("Top-rated Movie per Genre")
-    st.dataframe(top_per_genre[['Genre', 'Title', 'Ratings']])
-
-    genre_votes = df_exploded.groupby('Genre')['Votes'].sum().reset_index().sort_values(by='Votes', ascending=False)
-    st.subheader("Most Popular Genres by Total Votes")
-    fig = px.pie(genre_votes, names='Genre', values='Votes')
-    st.plotly_chart(fig)
-
-    min_duration_row = df.loc[df['Duration'].idxmin()][['Title', 'Duration']]
-    max_duration_row = df.loc[df['Duration'].idxmax()][['Title', 'Duration']]
-    duration_extremes = pd.DataFrame({
-        "Type": ["Shortest", "Longest"],
-        "Title": [min_duration_row['Title'], max_duration_row['Title']],
-        "Duration (Minutes)": [min_duration_row['Duration'], max_duration_row['Duration']]
-    })
-    st.subheader("Duration Extremes")
-    st.dataframe(duration_extremes)
-
-    avg_rating_genre = df_exploded.groupby('Genre')['Ratings'].mean().reset_index()
-    st.subheader("Ratings by Genre Heatmap")
-    heatmap_df = avg_rating_genre.pivot_table(index='Genre', values='Ratings')
-    fig, ax = plt.subplots(figsize=(10, len(heatmap_df) * 0.4))
-    sns.heatmap(heatmap_df, annot=True, cmap='YlGnBu', ax=ax)
-    st.pyplot(fig)
-
-    st.subheader("Ratings vs Votes Correlation")
-    fig = px.scatter(df, x='Votes', y='Ratings', hover_data=['Title'])
-    st.plotly_chart(fig)
-
-elif page == "Interactive Filter":
-    st.title("Interactive Movie Filter")
-
-    st.sidebar.header("Filter Movies")
-
-    genres = sorted(df_exploded['Genre'].unique().tolist())
-    selected_genres = st.sidebar.multiselect("Select Genre(s):", genres)
-
-    min_rating, max_rating = float(df_exploded['Ratings'].min()), float(df_exploded['Ratings'].max())
-    rating_filter = st.sidebar.slider("Minimum Rating:", min_value=min_rating, max_value=max_rating, value=min_rating, step=0.1)
-
-    vote_filter = st.sidebar.number_input("Minimum Voting Count:", min_value=0, value=10000, step=1000)
-
-    duration_option = st.sidebar.selectbox("Select Duration Range:",["All", "< 2 hrs", "2-3 hrs", "> 3 hrs"])
-
-    filtered_df = df_exploded.copy()
-
-    if selected_genres:
-        filtered_df = filtered_df[filtered_df['Genre'].isin(selected_genres)]
-
-    filtered_df = filtered_df[filtered_df['Ratings'] >= rating_filter]
-    filtered_df = filtered_df[filtered_df['Votes'] >= vote_filter]
-
-    if duration_option == "< 2 hrs":
-        filtered_df = filtered_df[filtered_df['Duration'] < 120]
-    elif duration_option == "2-3 hrs":
-        filtered_df = filtered_df[(filtered_df['Duration'] >= 120) & (filtered_df['Duration'] <= 180)]
-    elif duration_option == "> 3 hrs":
-        filtered_df = filtered_df[filtered_df['Duration'] > 180]
-
-    st.subheader("Filtered Movie Results")
-    st.write(f"Showing {len(filtered_df)} movie(s) after applying filters.")
-
-    if filtered_df.empty:
-        st.warning("No movies found matching your filter criteria. Try adjusting the filters.")
-
-    for idx, row in filtered_df.iterrows():
-        st.markdown(f"""
-        <div style='border:1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 10px;'>
-            <h4 style='margin: 0;'>{row['Title']}</h4>
-            <p style='margin: 5px 0;'><strong>Genre:</strong> {row['Genre']} | <strong>Rating:</strong> {row['Ratings']} | <strong>Votes:</strong> {int(row['Votes'])} | <strong>Duration:</strong> {row['Duration']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyOXgEoruD6wsYkzdnOFGb+T",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/Santhosh151999/IMDB-2024-Project-01-/blob/main/IMDB_2024.py\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 10,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 1000
+        },
+        "id": "Be7V2UMjSXNC",
+        "outputId": "3df385f5-192e-48d6-deb0-633c25f7fb17"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Requirement already satisfied: mysql-connector-python in /usr/local/lib/python3.11/dist-packages (9.3.0)\n",
+            "Requirement already satisfied: streamlit in /usr/local/lib/python3.11/dist-packages (1.45.1)\n",
+            "Requirement already satisfied: altair<6,>=4.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (5.5.0)\n",
+            "Requirement already satisfied: blinker<2,>=1.5.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (1.9.0)\n",
+            "Requirement already satisfied: cachetools<6,>=4.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (5.5.2)\n",
+            "Requirement already satisfied: click<9,>=7.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (8.2.0)\n",
+            "Requirement already satisfied: numpy<3,>=1.23 in /usr/local/lib/python3.11/dist-packages (from streamlit) (2.0.2)\n",
+            "Requirement already satisfied: packaging<25,>=20 in /usr/local/lib/python3.11/dist-packages (from streamlit) (24.2)\n",
+            "Requirement already satisfied: pandas<3,>=1.4.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (2.2.2)\n",
+            "Requirement already satisfied: pillow<12,>=7.1.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (11.2.1)\n",
+            "Requirement already satisfied: protobuf<7,>=3.20 in /usr/local/lib/python3.11/dist-packages (from streamlit) (5.29.4)\n",
+            "Requirement already satisfied: pyarrow>=7.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (18.1.0)\n",
+            "Requirement already satisfied: requests<3,>=2.27 in /usr/local/lib/python3.11/dist-packages (from streamlit) (2.32.3)\n",
+            "Requirement already satisfied: tenacity<10,>=8.1.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (9.1.2)\n",
+            "Requirement already satisfied: toml<2,>=0.10.1 in /usr/local/lib/python3.11/dist-packages (from streamlit) (0.10.2)\n",
+            "Requirement already satisfied: typing-extensions<5,>=4.4.0 in /usr/local/lib/python3.11/dist-packages (from streamlit) (4.13.2)\n",
+            "Requirement already satisfied: watchdog<7,>=2.1.5 in /usr/local/lib/python3.11/dist-packages (from streamlit) (6.0.0)\n",
+            "Requirement already satisfied: gitpython!=3.1.19,<4,>=3.0.7 in /usr/local/lib/python3.11/dist-packages (from streamlit) (3.1.44)\n",
+            "Requirement already satisfied: pydeck<1,>=0.8.0b4 in /usr/local/lib/python3.11/dist-packages (from streamlit) (0.9.1)\n",
+            "Requirement already satisfied: tornado<7,>=6.0.3 in /usr/local/lib/python3.11/dist-packages (from streamlit) (6.4.2)\n",
+            "Requirement already satisfied: jinja2 in /usr/local/lib/python3.11/dist-packages (from altair<6,>=4.0->streamlit) (3.1.6)\n",
+            "Requirement already satisfied: jsonschema>=3.0 in /usr/local/lib/python3.11/dist-packages (from altair<6,>=4.0->streamlit) (4.23.0)\n",
+            "Requirement already satisfied: narwhals>=1.14.2 in /usr/local/lib/python3.11/dist-packages (from altair<6,>=4.0->streamlit) (1.39.0)\n",
+            "Requirement already satisfied: gitdb<5,>=4.0.1 in /usr/local/lib/python3.11/dist-packages (from gitpython!=3.1.19,<4,>=3.0.7->streamlit) (4.0.12)\n",
+            "Requirement already satisfied: python-dateutil>=2.8.2 in /usr/local/lib/python3.11/dist-packages (from pandas<3,>=1.4.0->streamlit) (2.9.0.post0)\n",
+            "Requirement already satisfied: pytz>=2020.1 in /usr/local/lib/python3.11/dist-packages (from pandas<3,>=1.4.0->streamlit) (2025.2)\n",
+            "Requirement already satisfied: tzdata>=2022.7 in /usr/local/lib/python3.11/dist-packages (from pandas<3,>=1.4.0->streamlit) (2025.2)\n",
+            "Requirement already satisfied: charset-normalizer<4,>=2 in /usr/local/lib/python3.11/dist-packages (from requests<3,>=2.27->streamlit) (3.4.2)\n",
+            "Requirement already satisfied: idna<4,>=2.5 in /usr/local/lib/python3.11/dist-packages (from requests<3,>=2.27->streamlit) (3.10)\n",
+            "Requirement already satisfied: urllib3<3,>=1.21.1 in /usr/local/lib/python3.11/dist-packages (from requests<3,>=2.27->streamlit) (2.4.0)\n",
+            "Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.11/dist-packages (from requests<3,>=2.27->streamlit) (2025.4.26)\n",
+            "Requirement already satisfied: smmap<6,>=3.0.1 in /usr/local/lib/python3.11/dist-packages (from gitdb<5,>=4.0.1->gitpython!=3.1.19,<4,>=3.0.7->streamlit) (5.0.2)\n",
+            "Requirement already satisfied: MarkupSafe>=2.0 in /usr/local/lib/python3.11/dist-packages (from jinja2->altair<6,>=4.0->streamlit) (3.0.2)\n",
+            "Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.11/dist-packages (from jsonschema>=3.0->altair<6,>=4.0->streamlit) (25.3.0)\n",
+            "Requirement already satisfied: jsonschema-specifications>=2023.03.6 in /usr/local/lib/python3.11/dist-packages (from jsonschema>=3.0->altair<6,>=4.0->streamlit) (2025.4.1)\n",
+            "Requirement already satisfied: referencing>=0.28.4 in /usr/local/lib/python3.11/dist-packages (from jsonschema>=3.0->altair<6,>=4.0->streamlit) (0.36.2)\n",
+            "Requirement already satisfied: rpds-py>=0.7.1 in /usr/local/lib/python3.11/dist-packages (from jsonschema>=3.0->altair<6,>=4.0->streamlit) (0.24.0)\n",
+            "Requirement already satisfied: six>=1.5 in /usr/local/lib/python3.11/dist-packages (from python-dateutil>=2.8.2->pandas<3,>=1.4.0->streamlit) (1.17.0)\n"
+          ]
+        },
+        {
+          "output_type": "error",
+          "ename": "InterfaceError",
+          "evalue": "(mysql.connector.errors.InterfaceError) 2003: Can't connect to MySQL server on 'localhost:3306' (Errno 111: Connection refused)\n(Background on this error at: https://sqlalche.me/e/20/rvf5)",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mConnectionRefusedError\u001b[0m                    Traceback (most recent call last)",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/network.py\u001b[0m in \u001b[0;36mopen_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    794\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msock\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msettimeout\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_connection_timeout\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 795\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msock\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0msockaddr\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    796\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0;34m(\u001b[0m\u001b[0msocket\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mtimeout\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mTimeoutError\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mConnectionRefusedError\u001b[0m: [Errno 111] Connection refused",
+            "\nThe above exception was the direct cause of the following exception:\n",
+            "\u001b[0;31mInterfaceError\u001b[0m                            Traceback (most recent call last)",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, engine, connection, _has_events, _allow_revalidate, _allow_autobegin)\u001b[0m\n\u001b[1;32m    145\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 146\u001b[0;31m                 \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_dbapi_connection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mengine\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mraw_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    147\u001b[0m             \u001b[0;32mexcept\u001b[0m \u001b[0mdialect\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mloaded_dbapi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mError\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36mraw_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m   3297\u001b[0m         \"\"\"\n\u001b[0;32m-> 3298\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   3299\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    448\u001b[0m         \"\"\"\n\u001b[0;32m--> 449\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0m_ConnectionFairy\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_checkout\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    450\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m_checkout\u001b[0;34m(cls, pool, threadconns, fairy)\u001b[0m\n\u001b[1;32m   1263\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mfairy\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 1264\u001b[0;31m             \u001b[0mfairy\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0m_ConnectionRecord\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mcheckout\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpool\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   1265\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36mcheckout\u001b[0;34m(cls, pool)\u001b[0m\n\u001b[1;32m    712\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 713\u001b[0;31m             \u001b[0mrec\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_do_get\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    714\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/impl.py\u001b[0m in \u001b[0;36m_do_get\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    178\u001b[0m             \u001b[0;32mexcept\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 179\u001b[0;31m                 \u001b[0;32mwith\u001b[0m \u001b[0mutil\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msafe_reraise\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    180\u001b[0m                     \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_dec_overflow\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/util/langhelpers.py\u001b[0m in \u001b[0;36m__exit__\u001b[0;34m(self, type_, value, traceback)\u001b[0m\n\u001b[1;32m    145\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_exc_info\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m  \u001b[0;31m# remove potential circular references\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 146\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0mexc_value\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mwith_traceback\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mexc_tb\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    147\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/impl.py\u001b[0m in \u001b[0;36m_do_get\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    176\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 177\u001b[0;31m                 \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_create_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    178\u001b[0m             \u001b[0;32mexcept\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m_create_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    389\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 390\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0m_ConnectionRecord\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    391\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, pool, connect)\u001b[0m\n\u001b[1;32m    674\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mconnect\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 675\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m__connect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    676\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfinalize_callback\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mdeque\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m__connect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    900\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mBaseException\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 901\u001b[0;31m             \u001b[0;32mwith\u001b[0m \u001b[0mutil\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msafe_reraise\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    902\u001b[0m                 \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlogger\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdebug\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"Error on connect(): %s\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/util/langhelpers.py\u001b[0m in \u001b[0;36m__exit__\u001b[0;34m(self, type_, value, traceback)\u001b[0m\n\u001b[1;32m    145\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_exc_info\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m  \u001b[0;31m# remove potential circular references\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 146\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0mexc_value\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mwith_traceback\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mexc_tb\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    147\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m__connect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    896\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstarttime\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mtime\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mtime\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 897\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdbapi_connection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mconnection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_invoke_creator\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    898\u001b[0m             \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlogger\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdebug\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"Created new connection %r\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mconnection\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/create.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(connection_record)\u001b[0m\n\u001b[1;32m    645\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 646\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mdialect\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0mcargs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mcparams\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    647\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/default.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self, *cargs, **cparams)\u001b[0m\n\u001b[1;32m    624\u001b[0m         \u001b[0;31m# inherits the docstring from interfaces.Dialect.connect\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 625\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mloaded_dbapi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0mcargs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mcparams\u001b[0m\u001b[0;34m)\u001b[0m  \u001b[0;31m# type: ignore[no-any-return]  # NOQA: E501\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    626\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/pooling.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(*args, **kwargs)\u001b[0m\n\u001b[1;32m    322\u001b[0m         \u001b[0;32mreturn\u001b[0m \u001b[0mCMySQLConnection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 323\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0mMySQLConnection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    324\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/connection.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, **kwargs)\u001b[0m\n\u001b[1;32m    184\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 185\u001b[0;31m                 \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    186\u001b[0m             \u001b[0;32mexcept\u001b[0m \u001b[0mException\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/abstracts.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self, **kwargs)\u001b[0m\n\u001b[1;32m   1604\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdisconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 1605\u001b[0;31m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_open_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   1606\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/connection.py\u001b[0m in \u001b[0;36m_open_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    410\u001b[0m                 ) from err\n\u001b[0;32m--> 411\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    412\u001b[0m         \u001b[0;32mfinally\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/connection.py\u001b[0m in \u001b[0;36m_open_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    381\u001b[0m         \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 382\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_socket\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mopen_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    383\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/network.py\u001b[0m in \u001b[0;36mopen_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    805\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mIOError\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 806\u001b[0;31m             raise InterfaceError(\n\u001b[0m\u001b[1;32m    807\u001b[0m                 \u001b[0merrno\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;36m2003\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mInterfaceError\u001b[0m: 2003: Can't connect to MySQL server on 'localhost:3306' (Errno 111: Connection refused)",
+            "\nThe above exception was the direct cause of the following exception:\n",
+            "\u001b[0;31mInterfaceError\u001b[0m                            Traceback (most recent call last)",
+            "\u001b[0;32m<ipython-input-10-3345583dd341>\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m     15\u001b[0m \u001b[0;31m# Load data from MySQL\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     16\u001b[0m \u001b[0mquery\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m\"SELECT * FROM movies2024\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 17\u001b[0;31m \u001b[0mdf\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpd\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mread_sql\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mquery\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mengine\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     18\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     19\u001b[0m \u001b[0;31m# Fill missing genres\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pandas/io/sql.py\u001b[0m in \u001b[0;36mread_sql\u001b[0;34m(sql, con, index_col, coerce_float, params, parse_dates, columns, chunksize, dtype_backend, dtype)\u001b[0m\n\u001b[1;32m    702\u001b[0m     \u001b[0;32massert\u001b[0m \u001b[0mdtype_backend\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mlib\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mno_default\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    703\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 704\u001b[0;31m     \u001b[0;32mwith\u001b[0m \u001b[0mpandasSQL_builder\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0mpandas_sql\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    705\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0misinstance\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpandas_sql\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mSQLiteDatabase\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    706\u001b[0m             return pandas_sql.read_query(\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pandas/io/sql.py\u001b[0m in \u001b[0;36mpandasSQL_builder\u001b[0;34m(con, schema, need_transaction)\u001b[0m\n\u001b[1;32m    904\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    905\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0msqlalchemy\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m \u001b[0;32mand\u001b[0m \u001b[0misinstance\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m(\u001b[0m\u001b[0mstr\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0msqlalchemy\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mengine\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mConnectable\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 906\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mSQLDatabase\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mschema\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mneed_transaction\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    907\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    908\u001b[0m     \u001b[0madbc\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mimport_optional_dependency\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"adbc_driver_manager.dbapi\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0merrors\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;34m\"ignore\"\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pandas/io/sql.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, con, schema, need_transaction)\u001b[0m\n\u001b[1;32m   1634\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mexit_stack\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mcallback\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdispose\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1635\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0misinstance\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mEngine\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 1636\u001b[0;31m             \u001b[0mcon\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mexit_stack\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0menter_context\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   1637\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mneed_transaction\u001b[0m \u001b[0;32mand\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mcon\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0min_transaction\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1638\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mexit_stack\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0menter_context\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcon\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbegin\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m   3272\u001b[0m         \"\"\"\n\u001b[1;32m   3273\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 3274\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_connection_cls\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   3275\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3276\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mraw_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;34m->\u001b[0m \u001b[0mPoolProxiedConnection\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, engine, connection, _has_events, _allow_revalidate, _allow_autobegin)\u001b[0m\n\u001b[1;32m    146\u001b[0m                 \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_dbapi_connection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mengine\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mraw_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    147\u001b[0m             \u001b[0;32mexcept\u001b[0m \u001b[0mdialect\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mloaded_dbapi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mError\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 148\u001b[0;31m                 Connection._handle_dbapi_exception_noconnection(\n\u001b[0m\u001b[1;32m    149\u001b[0m                     \u001b[0merr\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdialect\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mengine\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    150\u001b[0m                 )\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36m_handle_dbapi_exception_noconnection\u001b[0;34m(cls, e, dialect, engine, is_disconnect, invalidate_pool_on_disconnect, is_pre_ping)\u001b[0m\n\u001b[1;32m   2437\u001b[0m         \u001b[0;32melif\u001b[0m \u001b[0mshould_wrap\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2438\u001b[0m             \u001b[0;32massert\u001b[0m \u001b[0msqlalchemy_exception\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 2439\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0msqlalchemy_exception\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mwith_traceback\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mexc_info\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m2\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mfrom\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   2440\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2441\u001b[0m             \u001b[0;32massert\u001b[0m \u001b[0mexc_info\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, engine, connection, _has_events, _allow_revalidate, _allow_autobegin)\u001b[0m\n\u001b[1;32m    144\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mconnection\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    145\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 146\u001b[0;31m                 \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_dbapi_connection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mengine\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mraw_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    147\u001b[0m             \u001b[0;32mexcept\u001b[0m \u001b[0mdialect\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mloaded_dbapi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mError\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    148\u001b[0m                 Connection._handle_dbapi_exception_noconnection(\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/base.py\u001b[0m in \u001b[0;36mraw_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m   3296\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3297\u001b[0m         \"\"\"\n\u001b[0;32m-> 3298\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   3299\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   3300\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    447\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    448\u001b[0m         \"\"\"\n\u001b[0;32m--> 449\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0m_ConnectionFairy\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_checkout\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    450\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    451\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0m_return_conn\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mrecord\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mConnectionPoolEntry\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;34m->\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m_checkout\u001b[0;34m(cls, pool, threadconns, fairy)\u001b[0m\n\u001b[1;32m   1262\u001b[0m     ) -> _ConnectionFairy:\n\u001b[1;32m   1263\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mfairy\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 1264\u001b[0;31m             \u001b[0mfairy\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0m_ConnectionRecord\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mcheckout\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpool\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   1265\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1266\u001b[0m             \u001b[0;32mif\u001b[0m \u001b[0mthreadconns\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36mcheckout\u001b[0;34m(cls, pool)\u001b[0m\n\u001b[1;32m    711\u001b[0m             \u001b[0mrec\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mcast\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0m_ConnectionRecord\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_do_get\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    712\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 713\u001b[0;31m             \u001b[0mrec\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_do_get\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    714\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    715\u001b[0m         \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/impl.py\u001b[0m in \u001b[0;36m_do_get\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    177\u001b[0m                 \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_create_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    178\u001b[0m             \u001b[0;32mexcept\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 179\u001b[0;31m                 \u001b[0;32mwith\u001b[0m \u001b[0mutil\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msafe_reraise\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    180\u001b[0m                     \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_dec_overflow\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    181\u001b[0m                 \u001b[0;32mraise\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/util/langhelpers.py\u001b[0m in \u001b[0;36m__exit__\u001b[0;34m(self, type_, value, traceback)\u001b[0m\n\u001b[1;32m    144\u001b[0m             \u001b[0;32massert\u001b[0m \u001b[0mexc_value\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    145\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_exc_info\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m  \u001b[0;31m# remove potential circular references\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 146\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0mexc_value\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mwith_traceback\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mexc_tb\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    147\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    148\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_exc_info\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m  \u001b[0;31m# remove potential circular references\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/impl.py\u001b[0m in \u001b[0;36m_do_get\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    175\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_inc_overflow\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    176\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 177\u001b[0;31m                 \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_create_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    178\u001b[0m             \u001b[0;32mexcept\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    179\u001b[0m                 \u001b[0;32mwith\u001b[0m \u001b[0mutil\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msafe_reraise\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m_create_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    388\u001b[0m         \u001b[0;34m\"\"\"Called by subclasses to create a new ConnectionRecord.\"\"\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    389\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 390\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0m_ConnectionRecord\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    391\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    392\u001b[0m     def _invalidate(\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, pool, connect)\u001b[0m\n\u001b[1;32m    673\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m__pool\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpool\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    674\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mconnect\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 675\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m__connect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    676\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfinalize_callback\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mdeque\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    677\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m__connect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    899\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfresh\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mTrue\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    900\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mBaseException\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 901\u001b[0;31m             \u001b[0;32mwith\u001b[0m \u001b[0mutil\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msafe_reraise\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    902\u001b[0m                 \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlogger\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdebug\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"Error on connect(): %s\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    903\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/util/langhelpers.py\u001b[0m in \u001b[0;36m__exit__\u001b[0;34m(self, type_, value, traceback)\u001b[0m\n\u001b[1;32m    144\u001b[0m             \u001b[0;32massert\u001b[0m \u001b[0mexc_value\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    145\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_exc_info\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m  \u001b[0;31m# remove potential circular references\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 146\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0mexc_value\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mwith_traceback\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mexc_tb\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    147\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    148\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_exc_info\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m  \u001b[0;31m# remove potential circular references\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/pool/base.py\u001b[0m in \u001b[0;36m__connect\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    895\u001b[0m         \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    896\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstarttime\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mtime\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mtime\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 897\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdbapi_connection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mconnection\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_invoke_creator\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    898\u001b[0m             \u001b[0mpool\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlogger\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdebug\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"Created new connection %r\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mconnection\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    899\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfresh\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mTrue\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/create.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(connection_record)\u001b[0m\n\u001b[1;32m    644\u001b[0m                         \u001b[0;32mreturn\u001b[0m \u001b[0mconnection\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    645\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 646\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mdialect\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0mcargs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mcparams\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    647\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    648\u001b[0m         \u001b[0mcreator\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpop_kwarg\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"creator\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mconnect\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/sqlalchemy/engine/default.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self, *cargs, **cparams)\u001b[0m\n\u001b[1;32m    623\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0mcargs\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mAny\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mcparams\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mAny\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;34m->\u001b[0m \u001b[0mDBAPIConnection\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    624\u001b[0m         \u001b[0;31m# inherits the docstring from interfaces.Dialect.connect\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 625\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mloaded_dbapi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0mcargs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mcparams\u001b[0m\u001b[0;34m)\u001b[0m  \u001b[0;31m# type: ignore[no-any-return]  # NOQA: E501\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    626\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    627\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mcreate_connect_args\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0murl\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mURL\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;34m->\u001b[0m \u001b[0mConnectArgsType\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/pooling.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(*args, **kwargs)\u001b[0m\n\u001b[1;32m    321\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0mCMySQLConnection\u001b[0m \u001b[0;32mand\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0muse_pure\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    322\u001b[0m         \u001b[0;32mreturn\u001b[0m \u001b[0mCMySQLConnection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 323\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0mMySQLConnection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    324\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    325\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/connection.py\u001b[0m in \u001b[0;36m__init__\u001b[0;34m(self, **kwargs)\u001b[0m\n\u001b[1;32m    183\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mkwargs\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    184\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 185\u001b[0;31m                 \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    186\u001b[0m             \u001b[0;32mexcept\u001b[0m \u001b[0mException\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    187\u001b[0m                 \u001b[0;31m# Tidy-up underlying socket on failure\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/abstracts.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(self, **kwargs)\u001b[0m\n\u001b[1;32m   1603\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1604\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdisconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 1605\u001b[0;31m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_open_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   1606\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1607\u001b[0m         charset, collation = (\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/connection.py\u001b[0m in \u001b[0;36m_open_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    409\u001b[0m                     \u001b[0mmsg\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0merr\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmsg\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    410\u001b[0m                 ) from err\n\u001b[0;32m--> 411\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    412\u001b[0m         \u001b[0;32mfinally\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    413\u001b[0m             \u001b[0;31m# as the connection is established, set back the read\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/connection.py\u001b[0m in \u001b[0;36m_open_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    380\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_socket\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_get_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    381\u001b[0m         \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 382\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_socket\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mopen_connection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    383\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    384\u001b[0m             \u001b[0;31m# do initial handshake\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/mysql/connector/network.py\u001b[0m in \u001b[0;36mopen_connection\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    804\u001b[0m             ) from err\n\u001b[1;32m    805\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mIOError\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0merr\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 806\u001b[0;31m             raise InterfaceError(\n\u001b[0m\u001b[1;32m    807\u001b[0m                 \u001b[0merrno\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;36m2003\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    808\u001b[0m                 \u001b[0mvalues\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mserver_host\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mserver_port\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0m_strioerror\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0merr\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mInterfaceError\u001b[0m: (mysql.connector.errors.InterfaceError) 2003: Can't connect to MySQL server on 'localhost:3306' (Errno 111: Connection refused)\n(Background on this error at: https://sqlalche.me/e/20/rvf5)"
+          ]
+        }
+      ],
+      "source": [
+        "import streamlit as st\n",
+        "import pandas as pd\n",
+        "import seaborn as sns\n",
+        "import matplotlib.pyplot as plt\n",
+        "import plotly.express as px\n",
+        "from sqlalchemy import create_engine\n",
+        "\n",
+        "# MySQL Connection\n",
+        "engine = create_engine(\"mysql+mysqlconnector://root:Dark2020%40@localhost/IMDB_2024\")\n",
+        "\n",
+        "# Load data from MySQL\n",
+        "query = \"SELECT * FROM movies2024\"\n",
+        "df = pd.read_sql(query, engine)\n",
+        "\n",
+        "# Fill missing genres\n",
+        "df['Genre'] = df['Genre'].fillna('Unknown')\n",
+        "\n",
+        "# Explode genres for individual analysis\n",
+        "def split_genres(df):\n",
+        "    rows = []\n",
+        "    for _, row in df.iterrows():\n",
+        "        for genre in row['Genre'].split(','):\n",
+        "            new_row = row.copy()\n",
+        "            new_row['Genre'] = genre.strip()\n",
+        "            rows.append(new_row)\n",
+        "    return pd.DataFrame(rows)\n",
+        "\n",
+        "df_exploded = split_genres(df)\n",
+        "\n",
+        "# Navigation\n",
+        "page = st.sidebar.radio(\"Choose View:\", [\"Visualizations\", \"Interactive Filter\"])\n",
+        "\n",
+        "if page == \"Visualizations\":\n",
+        "    st.title(\"IMDb 2024 Movie Analysis\")\n",
+        "    st.header(\"Data Visualizations\")\n",
+        "\n",
+        "    top_movies = df[df['Votes'] > 1000].sort_values(by=['Ratings', 'Votes'], ascending=False).head(10)\n",
+        "    st.subheader(\"Top 10 Movies by Rating and Voting\")\n",
+        "    st.dataframe(top_movies[['Title', 'Genre', 'Ratings', 'Votes']])\n",
+        "\n",
+        "    genre_count = df_exploded['Genre'].value_counts().reset_index()\n",
+        "    genre_count.columns = ['Genre', 'Count']\n",
+        "    st.subheader(\"Genre Distribution\")\n",
+        "    st.bar_chart(data=genre_count.set_index('Genre'))\n",
+        "\n",
+        "    avg_duration = df_exploded.groupby('Genre')['Duration'].mean().sort_values()\n",
+        "    st.subheader(\"Average Duration by Genre\")\n",
+        "    fig, ax = plt.subplots()\n",
+        "    avg_duration.plot(kind='barh', ax=ax)\n",
+        "    st.pyplot(fig)\n",
+        "\n",
+        "    avg_votes = df_exploded.groupby('Genre')['Votes'].mean().sort_values(ascending=False)\n",
+        "    st.subheader(\"Average Voting Counts by Genre\")\n",
+        "    st.bar_chart(avg_votes)\n",
+        "\n",
+        "    st.subheader(\"Rating Distribution\")\n",
+        "    fig, ax = plt.subplots()\n",
+        "    sns.histplot(df['Ratings'].dropna(), bins=20, kde=True, ax=ax)\n",
+        "    st.pyplot(fig)\n",
+        "\n",
+        "    top_per_genre = df_exploded.sort_values('Ratings', ascending=False).groupby('Genre').first().reset_index()\n",
+        "    st.subheader(\"Top-rated Movie per Genre\")\n",
+        "    st.dataframe(top_per_genre[['Genre', 'Title', 'Ratings']])\n",
+        "\n",
+        "    genre_votes = df_exploded.groupby('Genre')['Votes'].sum().reset_index().sort_values(by='Votes', ascending=False)\n",
+        "    st.subheader(\"Most Popular Genres by Total Votes\")\n",
+        "    fig = px.pie(genre_votes, names='Genre', values='Votes')\n",
+        "    st.plotly_chart(fig)\n",
+        "\n",
+        "    min_duration_row = df.loc[df['Duration'].idxmin()][['Title', 'Duration']]\n",
+        "    max_duration_row = df.loc[df['Duration'].idxmax()][['Title', 'Duration']]\n",
+        "    duration_extremes = pd.DataFrame({\n",
+        "        \"Type\": [\"Shortest\", \"Longest\"],\n",
+        "        \"Title\": [min_duration_row['Title'], max_duration_row['Title']],\n",
+        "        \"Duration (Minutes)\": [min_duration_row['Duration'], max_duration_row['Duration']]\n",
+        "    })\n",
+        "    st.subheader(\"Duration Extremes\")\n",
+        "    st.dataframe(duration_extremes)\n",
+        "\n",
+        "    avg_rating_genre = df_exploded.groupby('Genre')['Ratings'].mean().reset_index()\n",
+        "    st.subheader(\"Ratings by Genre Heatmap\")\n",
+        "    heatmap_df = avg_rating_genre.pivot_table(index='Genre', values='Ratings')\n",
+        "    fig, ax = plt.subplots(figsize=(10, len(heatmap_df) * 0.4))\n",
+        "    sns.heatmap(heatmap_df, annot=True, cmap='YlGnBu', ax=ax)\n",
+        "    st.pyplot(fig)\n",
+        "\n",
+        "    st.subheader(\"Ratings vs Votes Correlation\")\n",
+        "    fig = px.scatter(df, x='Votes', y='Ratings', hover_data=['Title'])\n",
+        "    st.plotly_chart(fig)\n",
+        "\n",
+        "elif page == \"Interactive Filter\":\n",
+        "    st.title(\"Interactive Movie Filter\")\n",
+        "\n",
+        "    st.sidebar.header(\"Filter Movies\")\n",
+        "\n",
+        "    genres = sorted(df_exploded['Genre'].unique().tolist())\n",
+        "    selected_genres = st.sidebar.multiselect(\"Select Genre(s):\", genres)\n",
+        "\n",
+        "    min_rating, max_rating = float(df_exploded['Ratings'].min()), float(df_exploded['Ratings'].max())\n",
+        "    rating_filter = st.sidebar.slider(\"Minimum Rating:\", min_value=min_rating, max_value=max_rating, value=min_rating, step=0.1)\n",
+        "\n",
+        "    vote_filter = st.sidebar.number_input(\"Minimum Voting Count:\", min_value=0, value=10000, step=1000)\n",
+        "\n",
+        "    duration_option = st.sidebar.selectbox(\"Select Duration Range:\",[\"All\", \"< 2 hrs\", \"2-3 hrs\", \"> 3 hrs\"])\n",
+        "\n",
+        "    filtered_df = df_exploded.copy()\n",
+        "\n",
+        "    if selected_genres:\n",
+        "        filtered_df = filtered_df[filtered_df['Genre'].isin(selected_genres)]\n",
+        "\n",
+        "    filtered_df = filtered_df[filtered_df['Ratings'] >= rating_filter]\n",
+        "    filtered_df = filtered_df[filtered_df['Votes'] >= vote_filter]\n",
+        "\n",
+        "    if duration_option == \"< 2 hrs\":\n",
+        "        filtered_df = filtered_df[filtered_df['Duration'] < 120]\n",
+        "    elif duration_option == \"2-3 hrs\":\n",
+        "        filtered_df = filtered_df[(filtered_df['Duration'] >= 120) & (filtered_df['Duration'] <= 180)]\n",
+        "    elif duration_option == \"> 3 hrs\":\n",
+        "        filtered_df = filtered_df[filtered_df['Duration'] > 180]\n",
+        "\n",
+        "    st.subheader(\"Filtered Movie Results\")\n",
+        "    st.write(f\"Showing {len(filtered_df)} movie(s) after applying filters.\")\n",
+        "\n",
+        "    if filtered_df.empty:\n",
+        "        st.warning(\"No movies found matching your filter criteria. Try adjusting the filters.\")\n",
+        "\n",
+        "    for idx, row in filtered_df.iterrows():\n",
+        "        st.markdown(f\"\"\"\n",
+        "        <div style='border:1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 10px;'>\n",
+        "            <h4 style='margin: 0;'>{row['Title']}</h4>\n",
+        "            <p style='margin: 5px 0;'><strong>Genre:</strong> {row['Genre']} | <strong>Rating:</strong> {row['Ratings']} | <strong>Votes:</strong> {int(row['Votes'])} | <strong>Duration:</strong> {row['Duration']}</p>\n",
+        "        </div>\n",
+        "        \"\"\", unsafe_allow_html=True)\n"
+      ]
+    }
+  ]
+}
